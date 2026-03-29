@@ -1,186 +1,253 @@
 <!DOCTYPE html>
-
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<title>Kahoot PRO - Host</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kahoot PRO VIP</title>
 
 <style>
 body{
   margin:0;
-  font-family:sans-serif;
-  background:#0f2027;
+  font-family:'Segoe UI',sans-serif;
+  background:linear-gradient(135deg,#46178f,#1a1a2e);
   color:white;
   text-align:center;
 }
-h1{color:#00ffcc;}
+
+h1{font-size:28px;margin-top:10px;}
+
+.screen{display:none;padding:15px;}
+
+input,button{
+  padding:12px;
+  font-size:16px;
+  border-radius:10px;
+  border:none;
+}
+
+button{cursor:pointer;}
 
 .answers{
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:10px;
-  max-width:600px;
-  margin:auto;
+  margin-top:20px;
 }
 
-.answer{
-  padding:20px;
+.btn{
+  padding:18px;
   border-radius:15px;
-  font-weight:bold;
+  font-size:16px;
+  color:white;
 }
 
-.answer:nth-child(1){background:#e21b3c;}
-.answer:nth-child(2){background:#1368ce;}
-.answer:nth-child(3){background:#d89e00;}
-.answer:nth-child(4){background:#26890c;}
+.red{background:#e21b3c;}
+.blue{background:#1368ce;}
+.yellow{background:#d89e00;}
+.green{background:#26890c;}
 
-#qr{margin:20px;}
+.correct{background:#00c853!important;}
+.wrong{background:#d50000!important;}
+
+#leaderboard li{margin:5px 0;}
+
+@media(max-width:600px){
+  .btn{font-size:14px;padding:14px;}
+}
 </style>
-
 </head>
 
 <body>
 
-<h1>🎮 HOST</h1>
-<button onclick="createRoom()">Tạo phòng</button>
-<h2 id="roomCode"></h2>
+<h1>⚡ Kahoot PRO VIP</h1>
 
-<canvas id="qr"></canvas>
+<div id="menu" class="screen" style="display:block;">
+  <button onclick="createRoom()">👑 Host</button>
+  <button onclick="showJoin()">🎮 Player</button>
+</div>
 
-<h2 id="timer">10</h2>
-<h2 id="question"></h2>
+<div id="host" class="screen">
+  <h2>PIN: <span id="pin"></span></h2>
+  <button onclick="startGame()">Start Game</button>
+</div>
 
-<div id="answers" class="answers"></div>
+<div id="join" class="screen">
+  <input id="name" placeholder="Tên"><br><br>
+  <input id="pinInput" placeholder="PIN"><br><br>
+  <button onclick="joinRoom()">Join</button>
+</div>
 
-<button onclick="nextQuestion()">➡ Câu tiếp</button>
+<div id="game" class="screen">
+  <h2 id="question"></h2>
+  <div id="answers" class="answers"></div>
+  <h3>⏱ <span id="time">10</span></h3>
+</div>
 
-<h3>🏆 BXH</h3>
-<ul id="rank"></ul>
+<div id="leaderboard">
+  <h3>🏆 BXH</h3>
+  <ul id="rank"></ul>
+</div>
 
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
 
 <script>
-// 🔑 CONFIG FIREBASE
+// 🔥 CONFIG (THAY CỦA BẠN)
 const firebaseConfig = {
-  apiKey: "YOUR_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT.firebaseio.com",
-  projectId: "YOUR_PROJECT"
+  apiKey:"YOUR_KEY",
+  authDomain:"YOUR_DOMAIN",
+  databaseURL:"YOUR_DB",
+  projectId:"YOUR_ID"
 };
-
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ❓ CÂU HỎI
-const questions = [
-  {q:"Nguồn năng lượng tái tạo?",a:["Than","Mặt trời","Dầu","Khí"],c:1},
-  {q:"Gió tạo năng lượng gì?",a:["Nhiệt","Điện","Hóa","Ánh sáng"],c:1},
-  {q:"100W trong 5h?",a:["0.5","1","2","5"],c:0}
+let roomId,playerName,isHost=false;
+let currentQ=0,answered=false,time=10;
+
+const questions=[
+ {q:"Năng lượng tái tạo?",a:["Than","Mặt trời","Dầu","Khí"],c:1},
+ {q:"100W trong 5h?",a:["0.5","1","2","5"],c:0},
+ {q:"Gió tạo năng lượng?",a:["Nhiệt","Điện","Hóa","Ánh sáng"],c:1}
 ];
 
-let room="";
-
-// 🏠 TẠO PHÒNG
 function createRoom(){
-  room = Math.random().toString(36).substring(2,7).toUpperCase();
+  roomId=Math.floor(100000+Math.random()*900000);
+  isHost=true;
 
-  db.ref("rooms/"+room).set({
-    questionIndex:0,
+  db.ref("rooms/"+roomId).set({
     players:{},
-    answers:{},
-    timer:{time:10}
+    question:0,
+    time:10,
+    state:"waiting"
   });
 
-  roomCode.innerText="Mã phòng: "+room;
-
-  QRCode.toCanvas(document.getElementById("qr"),
-    location.origin+"/player.html?room="+room);
-
-  listenRoom();
+  show("host");
+  pin.innerText=roomId;
+  listenPlayers();
 }
 
-// 📡 NGHE DATA
-function listenRoom(){
-  db.ref("rooms/"+room).on("value", snap=>{
-    let data = snap.val();
+function showJoin(){ show("join"); }
+
+function joinRoom(){
+  playerName=name.value;
+  roomId=pinInput.value;
+
+  db.ref("rooms/"+roomId).once("value").then(snap=>{
+    if(!snap.exists()){
+      alert("Phòng không tồn tại!");
+      return;
+    }
+
+    db.ref("rooms/"+roomId+"/players/"+playerName).set({score:0});
+
+    show("game");
+    listenGame();
+    listenPlayers();
+  });
+}
+
+function startGame(){
+  db.ref("rooms/"+roomId).update({
+    state:"playing",
+    question:0,
+    time:10
+  });
+}
+
+function listenGame(){
+  db.ref("rooms/"+roomId).on("value",snap=>{
+    let data=snap.val();
     if(!data) return;
 
-    showQuestion(data.questionIndex);
-    showRank(data.players);
-    showStats(data.answers);
-    timer.innerText = data.timer?.time || 0;
+    currentQ=data.question;
+    time=data.time;
+
+    showQuestion();
+    document.getElementById("time").innerText=time;
   });
 }
 
-// ❓ HIỂN THỊ CÂU HỎI
-function showQuestion(i){
-  let q=questions[i];
+function showQuestion(){
+  answered=false;
+  let q=questions[currentQ];
   if(!q) return;
 
   question.innerText=q.q;
   answers.innerHTML="";
 
-  q.a.forEach((ans,idx)=>{
-    let div=document.createElement("div");
-    div.className="answer";
-    div.innerText=ans;
-    answers.appendChild(div);
+  const colors=["red","blue","yellow","green"];
+
+  q.a.forEach((t,i)=>{
+    let btn=document.createElement("button");
+    btn.className="btn "+colors[i];
+    btn.innerText=t;
+
+    btn.onclick=()=>answer(i,btn);
+
+    answers.appendChild(btn);
   });
 }
 
-// 📊 % ĐÁP ÁN
-function showStats(ansData){
-  if(!ansData) return;
+function answer(i,btn){
+  if(answered || time<=0) return;
+  answered=true;
 
-  let counts=[0,0,0,0];
-  Object.values(ansData).forEach(a=>counts[a]++);
+  let q=questions[currentQ];
 
-  let total=Object.values(ansData).length;
+  if(i===q.c){
+    btn.classList.add("correct");
 
-  document.querySelectorAll(".answer").forEach((div,i)=>{
-    let p = total ? Math.round(counts[i]/total*100) : 0;
-    div.innerText += " ("+p+"%)";
-  });
+    db.ref("rooms/"+roomId+"/players/"+playerName+"/score")
+      .transaction(s=>(s||0)+100+time*10);
+  }else{
+    btn.classList.add("wrong");
+  }
+
+  document.querySelectorAll("#answers button")
+    .forEach(b=>b.disabled=true);
 }
 
-// 🏆 BXH
-function showRank(players){
-  rank.innerHTML="";
-  if(!players) return;
+setInterval(()=>{
+  if(isHost){
+    db.ref("rooms/"+roomId).once("value",snap=>{
+      let d=snap.val();
+      if(!d || d.state!=="playing") return;
 
-  Object.values(players)
-    .filter(p=>p.alive!==false)
-    .sort((a,b)=>b.score-a.score)
-    .forEach(p=>{
-      let li=document.createElement("li");
-      li.innerText=p.name+" - "+p.score;
-      rank.appendChild(li);
+      if(d.time>0){
+        db.ref("rooms/"+roomId+"/time").set(d.time-1);
+      }else{
+        db.ref("rooms/"+roomId).update({
+          question:d.question+1,
+          time:10
+        });
+      }
     });
+  }
+},1000);
+
+function listenPlayers(){
+  db.ref("rooms/"+roomId+"/players").on("value",snap=>{
+    let data=snap.val();
+    if(!data) return;
+
+    rank.innerHTML="";
+
+    Object.entries(data)
+      .sort((a,b)=>b[1].score-a[1].score)
+      .forEach(([n,v],i)=>{
+        let li=document.createElement("li");
+        li.innerText=`${i+1}. ${n} - ${v.score}`;
+        if(i===0) li.style.color="gold";
+        rank.appendChild(li);
+      });
+  });
 }
 
-// ⏱ TIMER
-function startTimer(){
-  let t=10;
-  db.ref("rooms/"+room+"/timer/time").set(t);
-
-  let iv=setInterval(()=>{
-    t--;
-    db.ref("rooms/"+room+"/timer/time").set(t);
-    if(t<=0) clearInterval(iv);
-  },1000);
-}
-
-// ⏭ NEXT
-function nextQuestion(){
-  db.ref("rooms/"+room+"/answers").set({});
-  db.ref("rooms/"+room+"/questionIndex")
-    .transaction(i=>(i||0)+1);
-
-  startTimer();
+function show(id){
+  document.querySelectorAll(".screen")
+    .forEach(s=>s.style.display="none");
+  document.getElementById(id).style.display="block";
 }
 </script>
 
