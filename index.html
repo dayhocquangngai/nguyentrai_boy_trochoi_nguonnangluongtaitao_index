@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Kahoot PRO - Host</title>
+
+<style>
+body{
+  margin:0;
+  font-family:sans-serif;
+  background:#0f2027;
+  color:white;
+  text-align:center;
+}
+h1{color:#00ffcc;}
+
+.answers{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  max-width:600px;
+  margin:auto;
+}
+
+.answer{
+  padding:20px;
+  border-radius:15px;
+  font-weight:bold;
+}
+
+.answer:nth-child(1){background:#e21b3c;}
+.answer:nth-child(2){background:#1368ce;}
+.answer:nth-child(3){background:#d89e00;}
+.answer:nth-child(4){background:#26890c;}
+
+#qr{margin:20px;}
+</style>
+
+</head>
+
+<body>
+
+<h1>🎮 HOST</h1>
+<button onclick="createRoom()">Tạo phòng</button>
+<h2 id="roomCode"></h2>
+
+<canvas id="qr"></canvas>
+
+<h2 id="timer">10</h2>
+<h2 id="question"></h2>
+
+<div id="answers" class="answers"></div>
+
+<button onclick="nextQuestion()">➡ Câu tiếp</button>
+
+<h3>🏆 BXH</h3>
+<ul id="rank"></ul>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+<script>
+// 🔑 CONFIG FIREBASE
+const firebaseConfig = {
+  apiKey: "YOUR_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+  projectId: "YOUR_PROJECT"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ❓ CÂU HỎI
+const questions = [
+  {q:"Nguồn năng lượng tái tạo?",a:["Than","Mặt trời","Dầu","Khí"],c:1},
+  {q:"Gió tạo năng lượng gì?",a:["Nhiệt","Điện","Hóa","Ánh sáng"],c:1},
+  {q:"100W trong 5h?",a:["0.5","1","2","5"],c:0}
+];
+
+let room="";
+
+// 🏠 TẠO PHÒNG
+function createRoom(){
+  room = Math.random().toString(36).substring(2,7).toUpperCase();
+
+  db.ref("rooms/"+room).set({
+    questionIndex:0,
+    players:{},
+    answers:{},
+    timer:{time:10}
+  });
+
+  roomCode.innerText="Mã phòng: "+room;
+
+  QRCode.toCanvas(document.getElementById("qr"),
+    location.origin+"/player.html?room="+room);
+
+  listenRoom();
+}
+
+// 📡 NGHE DATA
+function listenRoom(){
+  db.ref("rooms/"+room).on("value", snap=>{
+    let data = snap.val();
+    if(!data) return;
+
+    showQuestion(data.questionIndex);
+    showRank(data.players);
+    showStats(data.answers);
+    timer.innerText = data.timer?.time || 0;
+  });
+}
+
+// ❓ HIỂN THỊ CÂU HỎI
+function showQuestion(i){
+  let q=questions[i];
+  if(!q) return;
+
+  question.innerText=q.q;
+  answers.innerHTML="";
+
+  q.a.forEach((ans,idx)=>{
+    let div=document.createElement("div");
+    div.className="answer";
+    div.innerText=ans;
+    answers.appendChild(div);
+  });
+}
+
+// 📊 % ĐÁP ÁN
+function showStats(ansData){
+  if(!ansData) return;
+
+  let counts=[0,0,0,0];
+  Object.values(ansData).forEach(a=>counts[a]++);
+
+  let total=Object.values(ansData).length;
+
+  document.querySelectorAll(".answer").forEach((div,i)=>{
+    let p = total ? Math.round(counts[i]/total*100) : 0;
+    div.innerText += " ("+p+"%)";
+  });
+}
+
+// 🏆 BXH
+function showRank(players){
+  rank.innerHTML="";
+  if(!players) return;
+
+  Object.values(players)
+    .filter(p=>p.alive!==false)
+    .sort((a,b)=>b.score-a.score)
+    .forEach(p=>{
+      let li=document.createElement("li");
+      li.innerText=p.name+" - "+p.score;
+      rank.appendChild(li);
+    });
+}
+
+// ⏱ TIMER
+function startTimer(){
+  let t=10;
+  db.ref("rooms/"+room+"/timer/time").set(t);
+
+  let iv=setInterval(()=>{
+    t--;
+    db.ref("rooms/"+room+"/timer/time").set(t);
+    if(t<=0) clearInterval(iv);
+  },1000);
+}
+
+// ⏭ NEXT
+function nextQuestion(){
+  db.ref("rooms/"+room+"/answers").set({});
+  db.ref("rooms/"+room+"/questionIndex")
+    .transaction(i=>(i||0)+1);
+
+  startTimer();
+}
+</script>
+
+</body>
+</html>
